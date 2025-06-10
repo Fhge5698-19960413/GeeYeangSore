@@ -176,6 +176,6 @@ APIControllers 依據業務功能分目錄，對應 RESTful API，前端（Vue 3
 
 本專案 API 由前端 Vue 3 專案串接使用，前端包含聊天室 UI、金流流程、會員登入等功能。
 
- [前往前端倉庫（Vue 3）](https://github.com/fhge5698/GeeYeangSoreVue)
+ [前往前端倉庫（Vue 3）](https://github.com/Fhge5698-19960413/GeeYeangSoreVue)
 
 原始專案為團隊共同開發，本版本為個人備份與展示用途，非正式對外服務平台。
