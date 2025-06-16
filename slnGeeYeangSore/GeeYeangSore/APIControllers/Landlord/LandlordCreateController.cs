@@ -775,28 +775,28 @@ namespace GeeYeangSore.APIControllers.Landlord
                     var requestData = new
                     {
                         model = "gemma3:4b",
-                        messages = new[]
-                        {
-                            new
-                            {
-                                role = "user",
-                                content = prompt
-                            }
-                        },
-                        max_tokens = 500
+                        prompt = prompt,
+                        stream = false,
+                        num_ctx = 1024,        // 降低上下文長度以加快速度
+                        num_thread = 8,        // 增加 CPU 線程數
+                        temperature = 0.5,     // 降低隨機性，使回應更快速且穩定
+                        top_k = 20,           // 減少詞彙選擇範圍
+                        top_p = 0.8,          // 降低詞彙選擇的機率閾值
+                        repeat_penalty = 1.0,  // 移除重複懲罰以加快速度
+                        num_predict = 200      // 限制生成的最大長度
                     };
 
                     // 設定請求標頭
                     client.DefaultRequestHeaders.Accept.Clear();
                     client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
 
-                    // 發送請求到新的API端點
+                    // 發送請求到本地 Ollama API
                     var jsonContent = JsonConvert.SerializeObject(requestData);
                     var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 
                     _logger.LogInformation($"Sending request to LLM API with data: {jsonContent}");
 
-                    var response = await client.PostAsync("http://llm.jayceeswlrorobot.win/v1/chat/completions", content);
+                    var response = await client.PostAsync("http://localhost:11434/api/generate", content);
                     var responseString = await response.Content.ReadAsStringAsync();
 
                     _logger.LogInformation($"Received response from LLM API: {responseString}");
@@ -804,7 +804,7 @@ namespace GeeYeangSore.APIControllers.Landlord
                     if (response.IsSuccessStatusCode)
                     {
                         var json = JObject.Parse(responseString);
-                        var generated = json["choices"]?[0]?["message"]?["content"]?.ToString();
+                        var generated = json["response"]?.ToString();
                         if (!string.IsNullOrEmpty(generated))
                         {
                             return Ok(new { success = true, description = generated.Trim() });
@@ -869,28 +869,28 @@ namespace GeeYeangSore.APIControllers.Landlord
                     var requestData = new
                     {
                         model = "gemma3:4b",
-                        messages = new[]
-                        {
-                            new
-                            {
-                                role = "user",
-                                content = prompt
-                            }
-                        },
-                        max_tokens = 1000
+                        prompt = prompt,
+                        stream = false,
+                        num_ctx = 1024,        // 降低上下文長度以加快速度
+                        num_thread = 8,        // 增加 CPU 線程數
+                        temperature = 0.5,     // 降低隨機性，使回應更快速且穩定
+                        top_k = 20,           // 減少詞彙選擇範圍
+                        top_p = 0.8,          // 降低詞彙選擇的機率閾值
+                        repeat_penalty = 1.0,  // 移除重複懲罰以加快速度
+                        num_predict = 300      // 限制生成的最大長度
                     };
 
                     // 設定請求標頭
                     client.DefaultRequestHeaders.Accept.Clear();
                     client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
 
-                    // 發送請求到 LLM API
+                    // 發送請求到本地 Ollama API
                     var jsonContent = JsonConvert.SerializeObject(requestData);
                     var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 
                     _logger.LogInformation($"Sending market analysis request to LLM API with data: {jsonContent}");
 
-                    var response = await client.PostAsync("http://llm.jayceeswlrorobot.win/v1/chat/completions", content);
+                    var response = await client.PostAsync("http://localhost:11434/api/generate", content);
                     var responseString = await response.Content.ReadAsStringAsync();
 
                     _logger.LogInformation($"Received response from LLM API: {responseString}");
@@ -898,7 +898,7 @@ namespace GeeYeangSore.APIControllers.Landlord
                     if (response.IsSuccessStatusCode)
                     {
                         var json = JObject.Parse(responseString);
-                        var analysis = json["choices"]?[0]?["message"]?["content"]?.ToString();
+                        var analysis = json["response"]?.ToString();
                         if (!string.IsNullOrEmpty(analysis))
                         {
                             return Ok(new { success = true, analysis = analysis.Trim() });
