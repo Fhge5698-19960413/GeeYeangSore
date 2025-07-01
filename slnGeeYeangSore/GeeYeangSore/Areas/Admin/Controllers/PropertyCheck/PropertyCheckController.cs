@@ -8,27 +8,29 @@ using X.PagedList.Extensions;
 using System.IO;
 using GeeYeangSore.Controllers;
 using System;
+using Service.Property;
 
 namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
 {
     // GET:https://localhost:7022/Admin/PropertyCheck/Index
     [Area("Admin")]
     [Route("Admin/[controller]/[action]")]
-
     public class PropertyCheckController : SuperController
     {
+        private readonly IPropertyCheckService _propertyCheckService;
         private readonly GeeYeangSoreContext _context;
 
-        public PropertyCheckController(GeeYeangSoreContext context)
+        public PropertyCheckController(IPropertyCheckService propertyCheckService, GeeYeangSoreContext context)
         {
+            _propertyCheckService = propertyCheckService;
             _context = context;
         }
 
-        
         public async Task<IActionResult> Index(int page = 1, string searchType = "all", string searchString = "", string sortOrder = "")
         {
             if (!HasAnyRole("超級管理員", "系統管理員", "內容管理員"))
                 return RedirectToAction("NoPermission", "Home", new { area = "Admin" });
+            
             int pageSize = 15; // 每頁15筆資料
 
             // 設置排序參數
@@ -40,108 +42,20 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
             ViewData["DateSort"] = sortOrder == "date" ? "date_desc" : "date";
             ViewData["CurrentSort"] = sortOrder;
 
-            var query = _context.HProperties
-                .Include(p => p.HLandlord)
-                .Where(p => p.HStatus == "未驗證" && (p.HIsDelete == null || p.HIsDelete == false));
-
-            if (!string.IsNullOrEmpty(searchString))
-            {
-                searchString = searchString.Trim();
-                switch (searchType?.ToLower())
-                {
-                    case "id":
-                        if (int.TryParse(searchString, out int propertyId))
-                        {
-                            query = query.Where(p => p.HPropertyId == propertyId);
-                        }
-                        break;
-                    case "title":
-                        query = query.Where(p => p.HPropertyTitle.Contains(searchString));
-                        break;
-                    case "address":
-                        query = query.Where(p => p.HAddress.Contains(searchString));
-                        break;
-                    case "city":
-                        query = query.Where(p => p.HCity.Contains(searchString));
-                        break;
-                    case "district":
-                        query = query.Where(p => p.HDistrict.Contains(searchString));
-                        break;
-                    case "landlord":
-                        query = query.Where(p => p.HLandlord.HLandlordName.Contains(searchString));
-                        break;
-                    case "type":
-                        query = query.Where(p => p.HPropertyType.Contains(searchString));
-                        break;
-                    case "price":
-                        if (int.TryParse(searchString, out int rentPrice))
-                        {
-                            query = query.Where(p => p.HRentPrice == rentPrice);
-                        }
-                        break;
-                    default: // "all" or any other value
-                        query = query.Where(p =>
-                            p.HPropertyId.ToString().Contains(searchString) ||
-                            p.HPropertyTitle.Contains(searchString) ||
-                            p.HAddress.Contains(searchString) ||
-                            p.HCity.Contains(searchString) ||
-                            p.HDistrict.Contains(searchString) ||
-                            p.HPropertyType.Contains(searchString) ||
-                            p.HRentPrice.ToString().Contains(searchString) ||
-                            p.HLandlord.HLandlordName.Contains(searchString));
-                        break;
-                }
-            }
-
-            // 根據排序參數進行排序
-            switch (sortOrder)
-            {
-                case "id_desc":
-                    query = query.OrderByDescending(p => p.HPropertyId);
-                    break;
-                case "id":
-                    query = query.OrderBy(p => p.HPropertyId);
-                    break;
-                case "title_desc":
-                    query = query.OrderByDescending(p => p.HPropertyTitle);
-                    break;
-                case "title":
-                    query = query.OrderBy(p => p.HPropertyTitle);
-                    break;
-                case "landlord_desc":
-                    query = query.OrderByDescending(p => p.HLandlord.HLandlordName);
-                    break;
-                case "landlord":
-                    query = query.OrderBy(p => p.HLandlord.HLandlordName);
-                    break;
-                case "address_desc":
-                    query = query.OrderByDescending(p => p.HAddress);
-                    break;
-                case "address":
-                    query = query.OrderBy(p => p.HAddress);
-                    break;
-                case "price":
-                    query = query.OrderBy(p => p.HRentPrice);
-                    break;
-                case "price_desc":
-                    query = query.OrderByDescending(p => p.HRentPrice);
-                    break;
-                case "date":
-                    query = query.OrderBy(p => p.HPublishedDate);
-                    break;
-                case "date_desc":
-                    query = query.OrderByDescending(p => p.HPublishedDate);
-                    break;
-                default:
-                    query = query.OrderBy(p => p.HPropertyId);
-                    break;
-            }
+            // 使用服務層取得未驗證的房源
+            var properties = await _propertyCheckService.GetPropertyAuditListByAsync(sortOrder, searchString, searchType);
+            
+            // 篩選未驗證的房源
+            var unverifiedProperties = properties
+                .Where(p => p.HProperty.HStatus == "未驗證" && (p.HProperty.HIsDelete == null || p.HProperty.HIsDelete == false))
+                .Select(p => p.HProperty)
+                .Distinct()
+                .ToList();
 
             ViewData["CurrentFilter"] = searchString;
             ViewData["SearchType"] = searchType;
 
-            var properties = await query.ToListAsync();
-            return View(properties.ToPagedList(page, pageSize));
+            return View(unverifiedProperties.ToPagedList(page, pageSize));
         }
 
         // GET: Admin/PropertyCheck/Details/5
@@ -149,6 +63,7 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
         {
             if (!HasAnyRole("超級管理員", "系統管理員", "內容管理員"))
                 return RedirectToAction("NoPermission", "Home", new { area = "Admin" });
+            
             if (id == null)
             {
                 return NotFound();
@@ -175,17 +90,61 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
         {
             if (!HasAnyRole("超級管理員", "系統管理員", "內容管理員"))
                 return RedirectToAction("NoPermission", "Home", new { area = "Admin" });
-            var property = await _context.HProperties.FindAsync(id);
-            if (property == null)
+            
+            try
             {
-                return NotFound();
+                // 假設審核員ID為1，實際應用中應該從當前登入用戶取得
+                int auditorId = 1;
+                var result = await _propertyCheckService.ApprovePropertyAsync(id, auditorId, "已驗證");
+                
+                if (result)
+                {
+                    TempData["SuccessMessage"] = "房源已成功核准！";
+                }
+                else
+                {
+                    TempData["ErrorMessage"] = "核准房源時發生錯誤";
+                }
+                
+                return RedirectToAction(nameof(Index));
             }
+            catch (Exception ex)
+            {
+                TempData["ErrorMessage"] = $"核准房源時發生錯誤：{ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
 
-            property.HStatus = "已驗證";
-            _context.Update(property);
-            await _context.SaveChangesAsync();
-
-            return RedirectToAction(nameof(Index));
+        // POST: Admin/PropertyCheck/Reject/5
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Reject(int id)
+        {
+            if (!HasAnyRole("超級管理員", "系統管理員", "內容管理員"))
+                return RedirectToAction("NoPermission", "Home", new { area = "Admin" });
+            
+            try
+            {
+                // 假設審核員ID為1，實際應用中應該從當前登入用戶取得
+                int auditorId = 1;
+                var result = await _propertyCheckService.RejectPropertyAsync(id, auditorId, "已拒絕");
+                
+                if (result)
+                {
+                    TempData["SuccessMessage"] = "房源已成功拒絕！";
+                }
+                else
+                {
+                    TempData["ErrorMessage"] = "拒絕房源時發生錯誤";
+                }
+                
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                TempData["ErrorMessage"] = $"拒絕房源時發生錯誤：{ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
         }
 
         // POST: Admin/PropertyCheck/Delete/5
@@ -193,6 +152,9 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
+            if (!HasAnyRole("超級管理員", "系統管理員", "內容管理員"))
+                return RedirectToAction("NoPermission", "Home", new { area = "Admin" });
+            
             try
             {
                 // 開始交易
@@ -248,6 +210,7 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
 
                         // 提交交易
                         await transaction.CommitAsync();
+                        TempData["SuccessMessage"] = "房源已成功刪除！";
 
                         return RedirectToAction(nameof(Index));
                     }
@@ -255,13 +218,15 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyCheck
                     {
                         // 回滾交易
                         await transaction.RollbackAsync();
-                        return View("Error");
+                        TempData["ErrorMessage"] = $"刪除房源時發生錯誤：{ex.Message}";
+                        return RedirectToAction(nameof(Index));
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return View("Error");
+                TempData["ErrorMessage"] = $"刪除房源時發生錯誤：{ex.Message}";
+                return RedirectToAction(nameof(Index));
             }
         }
     }

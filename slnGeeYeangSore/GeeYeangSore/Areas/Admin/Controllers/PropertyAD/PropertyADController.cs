@@ -7,6 +7,7 @@ using X.PagedList;
 using X.PagedList.Extensions;
 using GeeYeangSore.Controllers;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Service.Property;
 
 namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
 {
@@ -14,10 +15,12 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
     [Route("Admin/[controller]/[action]")]
     public class PropertyADController : SuperController
     {
+        private readonly IPropertyADService _propertyADService;
         private readonly GeeYeangSoreContext _context;
 
-        public PropertyADController(GeeYeangSoreContext context)
+        public PropertyADController(IPropertyADService propertyADService, GeeYeangSoreContext context)
         {
+            _propertyADService = propertyADService;
             _context = context;
         }
 
@@ -38,107 +41,9 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
             ViewData["EndDateSort"] = sortOrder == "enddate" ? "enddate_desc" : "enddate";
             ViewData["CurrentSort"] = sortOrder;
 
-            var ads = _context.HAds
-                .Include(a => a.HProperty)
-                .Include(a => a.HLandlord)
-                .Where(a => a.HIsDelete == null || a.HIsDelete == false)
-                .AsQueryable();
-
-            if (!string.IsNullOrEmpty(searchString))
-            {
-                searchString = searchString.Trim();
-                switch (searchType?.ToLower())
-                {
-                    case "id":
-                        if (int.TryParse(searchString, out int adId))
-                        {
-                            ads = ads.Where(a => a.HAdId == adId);
-                        }
-                        break;
-                    case "title":
-                        ads = ads.Where(a => a.HAdName.Contains(searchString));
-                        break;
-                    case "landlord":
-                        ads = ads.Where(a => a.HLandlord.HLandlordName.Contains(searchString));
-                        break;
-                    case "property":
-                        ads = ads.Where(a => a.HProperty.HPropertyTitle.Contains(searchString));
-                        break;
-                    case "category":
-                        ads = ads.Where(a => a.HCategory.Contains(searchString));
-                        break;
-                    case "status":
-                        ads = ads.Where(a => a.HStatus.Contains(searchString));
-                        break;
-                    case "region":
-                        ads = ads.Where(a => a.HTargetRegion.Contains(searchString));
-                        break;
-                    default: // "all" or any other value
-                        ads = ads.Where(a =>
-                            a.HAdId.ToString().Contains(searchString) ||
-                            a.HAdName.Contains(searchString) ||
-                            a.HCategory.Contains(searchString) ||
-                            a.HStatus.Contains(searchString) ||
-                            a.HTargetRegion.Contains(searchString) ||
-                            a.HProperty.HPropertyTitle.Contains(searchString) ||
-                            a.HLandlord.HLandlordName.Contains(searchString));
-                        break;
-                }
-            }
-
-            // 根據排序參數進行排序
-            switch (sortOrder)
-            {
-                case "id_desc":
-                    ads = ads.OrderByDescending(a => a.HAdId);
-                    break;
-                case "id":
-                    ads = ads.OrderBy(a => a.HAdId);
-                    break;
-                case "title_desc":
-                    ads = ads.OrderByDescending(a => a.HAdName);
-                    break;
-                case "title":
-                    ads = ads.OrderBy(a => a.HAdName);
-                    break;
-                case "landlord_desc":
-                    ads = ads.OrderByDescending(a => a.HLandlord.HLandlordName);
-                    break;
-                case "landlord":
-                    ads = ads.OrderBy(a => a.HLandlord.HLandlordName);
-                    break;
-                case "property_desc":
-                    ads = ads.OrderByDescending(a => a.HProperty.HPropertyTitle);
-                    break;
-                case "property":
-                    ads = ads.OrderBy(a => a.HProperty.HPropertyTitle);
-                    break;
-                case "status_desc":
-                    ads = ads.OrderByDescending(a => a.HStatus);
-                    break;
-                case "status":
-                    ads = ads.OrderBy(a => a.HStatus);
-                    break;
-                case "startdate_desc":
-                    ads = ads.OrderByDescending(a => a.HStartDate);
-                    break;
-                case "startdate":
-                    ads = ads.OrderBy(a => a.HStartDate);
-                    break;
-                case "enddate_desc":
-                    ads = ads.OrderByDescending(a => a.HEndDate);
-                    break;
-                case "enddate":
-                    ads = ads.OrderBy(a => a.HEndDate);
-                    break;
-                default:
-                    ads = ads.OrderBy(a => a.HAdId);
-                    break;
-            }
-
-            // 確保在分頁前完成排序
-            var result = await ads.ToListAsync();
-            return View(result.ToPagedList(page, pageSize));
+            // 使用服務層取得資料
+            var ads = await _propertyADService.GetAdListByAsync(sortOrder, searchString, searchType);
+            return View(ads.ToPagedList(page, pageSize));
         }
 
         public async Task<IActionResult> Details(int? id)
@@ -151,11 +56,7 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
                 return NotFound();
             }
 
-            var ad = await _context.HAds
-                .Include(a => a.HProperty)
-                .Include(a => a.HLandlord)
-                .FirstOrDefaultAsync(m => m.HAdId == id);
-
+            var ad = await _propertyADService.GetAdByIdAsync(id.Value);
             if (ad == null)
             {
                 return NotFound();
@@ -169,8 +70,7 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
             if (!HasAnyRole("超級管理員", "系統管理員", "內容管理員"))
                 return RedirectToAction("NoPermission", "Home", new { area = "Admin" });
 
-            ViewData["HPropertyId"] = new SelectList(_context.HProperties.Where(p => p.HStatus == "已驗證"), "HPropertyId", "HPropertyTitle");
-            ViewData["HLandlordId"] = new SelectList(_context.HLandlords.Where(l => l.HStatus == "已驗證"), "HLandlordId", "HLandlordName");
+            SetViewData(null);
             return View();
         }
 
@@ -191,11 +91,10 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
                 ad.HLastUpdated = DateTime.Now;
                 ad.HIsDelete = false;
                 
-                // 添加記錄
-                _context.HAds.Add(ad);
-                var result = await _context.SaveChangesAsync();
+                // 使用服務層建立廣告
+                var result = await _propertyADService.CreateAdAsync(ad);
                 
-                if (result > 0)
+                if (result)
                 {
                     TempData["SuccessMessage"] = "廣告已成功新增！";
                     return RedirectToAction(nameof(Index));
@@ -233,14 +132,13 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
                 return NotFound();
             }
 
-            var ad = await _context.HAds.FindAsync(id);
+            var ad = await _propertyADService.GetAdByIdAsync(id.Value);
             if (ad == null)
             {
                 return NotFound();
             }
 
-            ViewData["HPropertyId"] = new SelectList(_context.HProperties.Where(p => p.HStatus == "已驗證"), "HPropertyId", "HPropertyTitle", ad.HPropertyId);
-            ViewData["HLandlordId"] = new SelectList(_context.HLandlords.Where(l => l.HStatus == "已驗證"), "HLandlordId", "HLandlordName", ad.HLandlordId);
+            SetViewData(ad);
             return View(ad);
         }
 
@@ -254,10 +152,19 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
             try
             {
                 ad.HLastUpdated = DateTime.Now;
-                _context.Update(ad);
-                await _context.SaveChangesAsync();
-                TempData["SuccessMessage"] = "廣告已成功更新！";
-                return RedirectToAction(nameof(Index));
+                var result = await _propertyADService.UpdateAdAsync(ad);
+                
+                if (result)
+                {
+                    TempData["SuccessMessage"] = "廣告已成功更新！";
+                    return RedirectToAction(nameof(Index));
+                }
+                else
+                {
+                    ModelState.AddModelError("", "無法更新廣告資料");
+                    SetViewData(ad);
+                    return View(ad);
+                }
             }
             catch (Exception ex)
             {
@@ -279,11 +186,7 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
                 return NotFound();
             }
 
-            var ad = await _context.HAds
-                .Include(a => a.HProperty)
-                .Include(a => a.HLandlord)
-                .FirstOrDefaultAsync(m => m.HAdId == id);
-
+            var ad = await _propertyADService.GetAdByIdAsync(id.Value);
             if (ad == null)
             {
                 return NotFound();
@@ -301,14 +204,14 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
 
             try
             {
-                var ad = await _context.HAds.FindAsync(id);
-                if (ad != null)
+                var result = await _propertyADService.DeleteAdAsync(id);
+                if (result)
                 {
-                    ad.HIsDelete = true;
-                    ad.HLastUpdated = DateTime.Now;
-                    _context.Update(ad);
-                    await _context.SaveChangesAsync();
                     TempData["SuccessMessage"] = "廣告已成功刪除！";
+                }
+                else
+                {
+                    TempData["ErrorMessage"] = "刪除廣告時發生錯誤";
                 }
                 return RedirectToAction(nameof(Index));
             }
@@ -319,11 +222,6 @@ namespace GeeYeangSore.Areas.Admin.Controllers.PropertyAD
                 TempData["ErrorMessage"] = $"刪除廣告時發生錯誤：{ex.Message}";
                 return RedirectToAction(nameof(Index));
             }
-        }
-
-        private bool AdExists(int id)
-        {
-            return _context.HAds.Any(e => e.HAdId == id);
         }
     }
 }

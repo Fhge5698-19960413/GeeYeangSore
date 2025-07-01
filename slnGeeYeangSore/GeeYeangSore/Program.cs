@@ -4,7 +4,8 @@ using GeeYeangSore.Data;
 using GeeYeangSore.Models;
 using Microsoft.AspNetCore.Http;
 using GeeYeangSore.Hubs;
-using GeeYeangSore.Settings; 
+using GeeYeangSore.Settings;
+using Service.Property;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -71,6 +72,13 @@ builder.Services.AddSignalR();
 //添加SMTP
 builder.Services.Configure<SmtpSettings>(
 builder.Configuration.GetSection("SmtpSettings"));
+
+
+builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddScoped<IPropertyADService, PropertyADService>();
+builder.Services.AddScoped<IPropertyCheckService, PropertyCheckService>();
+
+
 
 var app = builder.Build();
 
